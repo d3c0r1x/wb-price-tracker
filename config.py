@@ -25,3 +25,15 @@ HTTP_CLIENT = os.getenv("WB_HTTP_CLIENT", "curl_cffi")
 PROXY = os.getenv("WB_PROXY", "")
 # Сколько попыток сделать на 429/5xx/сетевые ошибки (экспоненциальный backoff)
 MAX_RETRIES = int(os.getenv("WB_MAX_RETRIES", "3"))
+
+# --- Продвинутый уровень: кулдаун алертов, очистка БД, троттлинг ---
+# Не уведомлять об одном товаре чаще, чем раз в N часов (защита от спама)
+ALERT_COOLDOWN_HOURS = float(os.getenv("WB_ALERT_COOLDOWN_HOURS", "6"))
+# Хранить историю цен N дней, потом чистить (контроль роста БД)
+HISTORY_KEEP_DAYS = int(os.getenv("WB_HISTORY_KEEP_DAYS", "30"))
+# Минимальный интервал между сообщениями одного пользователя (секунды)
+THROTTLE_MIN_INTERVAL = float(os.getenv("WB_THROTTLE_MIN_INTERVAL", "0.7"))
+# ID администраторов (через запятую) — доступ к /cleanup; пусто = всем можно
+ADMIN_IDS = [int(x) for x in os.getenv("WB_ADMIN_IDS", "").split(",") if x.strip().isdigit()]
+# TTL кэша карточек WB (секунды): повторный /track того же артикула мгновенный
+CACHE_TTL_SECONDS = float(os.getenv("WB_CACHE_TTL_SECONDS", "300"))

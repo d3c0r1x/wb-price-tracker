@@ -1,7 +1,14 @@
-"""Локальная SQLite-БД через aiosqlite: товары, подписки пользователей, история цен."""
+"""Локальная SQLite-БД через aiosqlite: товары, подписки, история цен.
+
+Продвинутый уровень:
+  - индексы на колонки, по которым идёт поиск (articul, checked_at);
+  - last_alert_at в карточке — для кулдауна уведомлений (см. alerts.py);
+  - cleanup_history() — плановая очистка истории старше N дней;
+  - stats() — сводка по базе для команды /stats.
+"""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 
@@ -15,8 +22,9 @@ class Database:
         self.path = path
 
     async def init(self) -> None:
-        """Создаёт таблицы при первом запуске."""
+        """Создаёт таблицы и индексы при первом запуске."""
         async with aiosqlite.connect(self.path) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
             await db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS items (
@@ -28,6 +36,7 @@ class Database:
                     last_checked TEXT,
                     last_price   INTEGER,  -- цена, о которой уже уведомили
                     last_qty     INTEGER,  -- остаток, о котором уже уведомили
+                    last_alert_at TEXT,    -- когда последний раз уведомили
                     created_at   TEXT
                 )
                 """
@@ -53,6 +62,14 @@ class Database:
                 )
                 """
             )
+            # Индексы: поиск по артикулу в истории и по tracked.articul
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_price_history_articul "
+                "ON price_history (articul)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tracked_articul ON tracked (articul)"
+            )
             await db.commit()
 
     async def upsert_item(self, card: dict) -> None:
@@ -66,8 +83,9 @@ class Database:
             await db.execute(
                 """
                 INSERT INTO items
-                    (articul, title, price, sale_price, qty, last_checked, last_price, last_qty, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (articul, title, price, sale_price, qty, last_checked,
+                     last_price, last_qty, last_alert_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
                 ON CONFLICT(articul) DO UPDATE SET
                     title = excluded.title,
                     price = excluded.price,
@@ -78,19 +96,29 @@ class Database:
                 (articul, title, price, sale_price, qty, _now(), sale_price, qty, _now()),
             )
             await db.execute(
-                "INSERT INTO price_history (articul, price, sale_price, qty, checked_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO price_history (articul, price, sale_price, qty, checked_at) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (articul, price, sale_price, qty, _now()),
             )
             await db.commit()
 
     async def update_last_notified(self, articul: str, sale_price: int, qty: int) -> None:
-        """После отправки уведомления запоминает текущие значения, чтобы не спамить."""
+        """После отправки уведомления запоминает текущие значения и время."""
         async with aiosqlite.connect(self.path) as db:
             await db.execute(
-                "UPDATE items SET last_price = ?, last_qty = ? WHERE articul = ?",
-                (sale_price, qty, articul),
+                "UPDATE items SET last_price = ?, last_qty = ?, last_alert_at = ? "
+                "WHERE articul = ?",
+                (sale_price, qty, _now(), articul),
             )
             await db.commit()
+
+    async def get_last_alert(self, articul: str) -> str | None:
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "SELECT last_alert_at FROM items WHERE articul = ?", (articul,)
+            )
+            row = await cur.fetchone()
+        return row[0] if row else None
 
     async def track(self, user_id: int, articul: str) -> None:
         async with aiosqlite.connect(self.path) as db:
@@ -154,3 +182,30 @@ class Database:
             )
             rows = await cur.fetchall()
         return [dict(row) for row in rows]
+
+    async def cleanup_history(self, keep_days: int) -> int:
+        """Удаляет историю цен старше keep_days дней, возвращает число строк."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat(
+            timespec="seconds"
+        )
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "DELETE FROM price_history WHERE checked_at < ?", (cutoff,)
+            )
+            await db.commit()
+            return cur.rowcount
+
+    async def stats(self) -> dict:
+        """Сводка по базе: товары, подписки, записи истории, пользователи."""
+        async with aiosqlite.connect(self.path) as db:
+            async with db.execute("SELECT COUNT(*) FROM items") as cur:
+                items = (await cur.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM tracked") as cur:
+                tracked = (await cur.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM price_history") as cur:
+                history = (await cur.fetchone())[0]
+            async with db.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM tracked"
+            ) as cur:
+                users = (await cur.fetchone())[0]
+        return {"items": items, "tracked": tracked, "history": history, "users": users}
