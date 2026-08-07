@@ -1,0 +1,18 @@
+# Секреты: НИКОГДА не коммитить
+.env
+.env.*
+!.env.example
+*.env
+!**/.env.example
+
+# Данные и логи
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
