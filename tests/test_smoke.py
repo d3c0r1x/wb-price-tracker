@@ -222,3 +222,55 @@ def test_prices_from_card_falls_back_when_sale_price_zero() -> None:
     # salePriceU вовсе отсутствует — тоже fallback на priceU
     price, sale_price = _prices_from_card({"priceU": 123400})
     assert (price, sale_price) == (1234, 1234)
+
+
+
+def test_cleanup_orphans(tmp_path) -> None:
+    """Карточки без подписок удаляются очисткой (таблица items не растёт)."""
+    async def run() -> None:
+        db = Database(str(tmp_path / "tracker.db"))
+        await db.init()
+        card = await MockWBClient().get_card(ARTICUL)
+        await db.upsert_item(card)
+        await db.track(111, str(ARTICUL))
+        assert (await db.stats())["items"] >= 1
+        await db.untrack(111, str(ARTICUL))
+        deleted = await db.cleanup_orphans()
+        assert deleted >= 1
+        assert (await db.stats())["items"] == 0
+
+    asyncio.run(run())
+
+
+class _FailingTransport:
+    """Всегда падает с сетевой ошибкой (обрыв соединения)."""
+
+    async def get(self, url, *, params=None, headers=None):
+        raise ConnectionError("network down")
+
+    async def aclose(self):
+        return None
+
+
+def test_retries_one_does_not_sleep_on_network_error(monkeypatch) -> None:
+    """С retries=1 (диагностика) сетевой ошибке не предшествует лишний sleep.
+
+    Раньше в _get сравнивался attempt с self._max_retries (3), а не с локальным
+    max_retries (1), поэтому перед raise делался sleep 0.5 c — теперь нет.
+    """
+    import wb_api
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(wb_api.asyncio, "sleep", fake_sleep)
+    client = WBClient(transport=_FailingTransport(), max_retries=3)
+    try:
+        asyncio.run(client._get("https://card.wb.ru", retries=1))
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("ожидалась сетевая ошибка")
+    assert sleeps == []  # один запрос без ретраев — сна быть не должно

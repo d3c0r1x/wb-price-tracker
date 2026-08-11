@@ -195,6 +195,20 @@ class Database:
             await db.commit()
             return cur.rowcount
 
+    async def cleanup_orphans(self) -> int:
+        """Удаляет карточки товаров, за которыми никто не следит.
+
+        После /untrack карточка остаётся в items (история цен чистится отдельно
+        по возрасту) — без этой очистки таблица items росла бы бесконечно.
+        """
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "DELETE FROM items WHERE articul NOT IN "
+                "(SELECT DISTINCT articul FROM tracked)"
+            )
+            await db.commit()
+            return cur.rowcount
+
     async def stats(self) -> dict:
         """Сводка по базе: товары, подписки, записи истории, пользователи."""
         async with aiosqlite.connect(self.path) as db:

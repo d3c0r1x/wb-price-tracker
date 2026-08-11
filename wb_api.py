@@ -175,7 +175,7 @@ class WBClient:
                 )
             except Exception as exc:  # сетевая ошибка любого транспорта
                 last_exc = exc
-                if attempt == self._max_retries:
+                if attempt == max_retries:
                     raise
                 await asyncio.sleep(_backoff(attempt))
                 continue

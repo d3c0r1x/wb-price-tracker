@@ -299,6 +299,8 @@ async def main() -> None:
         args=[bot],
         id="daily_check",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,  # не накладывать прогоны, если предыдущий ещё идёт
     )
     # Плановая очистка истории старше HISTORY_KEEP_DAYS дней (раз в сутки)
     scheduler.add_job(
@@ -307,6 +309,8 @@ async def main() -> None:
         hours=24,
         id="history_cleanup",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
     scheduler.start()
     logger.info(
@@ -325,6 +329,9 @@ async def _scheduled_cleanup() -> None:
     deleted = await db.cleanup_history(config.HISTORY_KEEP_DAYS)
     if deleted:
         logger.info("Плановая очистка истории: удалено %s записей", deleted)
+    orphans = await db.cleanup_orphans()
+    if orphans:
+        logger.info("Плановая очистка: удалено %s карточек без подписок", orphans)
 
 
 if __name__ == "__main__":
