@@ -208,3 +208,17 @@ def test_cleanup_history(tmp_path) -> None:
         assert len(await db.history(str(ARTICUL))) == 1  # свежая на месте
 
     asyncio.run(run())
+
+def test_prices_from_card_falls_back_when_sale_price_zero() -> None:
+    """salePriceU=0 (нет скидки) не должен давать цену 0 — fallback на priceU."""
+    from bot import _prices_from_card
+
+    price, sale_price = _prices_from_card({"priceU": 99900, "salePriceU": 0})
+    assert (price, sale_price) == (999, 999)  # копейки -> рубли, без «0 ₽»
+
+    price, sale_price = _prices_from_card({"priceU": 99900, "salePriceU": 69900})
+    assert (price, sale_price) == (999, 699)
+
+    # salePriceU вовсе отсутствует — тоже fallback на priceU
+    price, sale_price = _prices_from_card({"priceU": 123400})
+    assert (price, sale_price) == (1234, 1234)

@@ -88,8 +88,7 @@ async def cmd_track(message: Message) -> None:
         return
     await db.upsert_item(card)
     await db.track(message.from_user.id, str(articul))
-    price = int(card.get("priceU", 0) or 0) // 100
-    sale_price = int(card.get("salePriceU", price) or price) // 100
+    price, sale_price = _prices_from_card(card)
     await message.answer(
         "✅ Товар добавлен в отслеживание:\n"
         f"<b>{_html.escape(str(card.get('name')), quote=False)}</b>\n"
@@ -102,6 +101,17 @@ async def cmd_track(message: Message) -> None:
 async def _fetch_card(articul: int):
     """Обёртка для TTL-кэша: обращается к клиенту WB (mock или реальному)."""
     return await wb.get_card(articul)
+
+
+def _prices_from_card(card: dict) -> tuple[int, int]:
+    """(обычная цена, цена со скидкой) в рублях из карточки WB (копейки).
+
+    Если salePriceU равен 0 или отсутствует — берём priceU (товар без скидки).
+    Иначе цена «упадёт» до 0 и бот будет слать ложные алерты о падении.
+    """
+    price = int(card.get("priceU") or 0) // 100
+    sale_price = int(card.get("salePriceU") or card.get("priceU") or 0) // 100
+    return price, sale_price
 
 
 @router.message(Command("list"))
@@ -228,7 +238,7 @@ async def check_prices(bot: Bot) -> None:
             continue
         if card is None:
             continue
-        sale_price = int(card.get("salePriceU", card.get("priceU", 0)) or 0) // 100
+        _, sale_price = _prices_from_card(card)
         qty = int(card.get("qty", 0) or 0)
 
         notify, messages = should_notify(
