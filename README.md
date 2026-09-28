@@ -1,3 +1,4 @@
+> **Архив.** Учебный проект раннего периода: оставлен как история, не поддерживается. Актуальные работы — https://d3c0r1x.github.io
 # WB Price Tracker
 
 [![CI](https://github.com/d3c0r1x/wb-price-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/d3c0r1x/wb-price-tracker/actions/workflows/ci.yml)
