@@ -89,12 +89,14 @@ async def cmd_track(message: Message) -> None:
     await db.upsert_item(card)
     await db.track(message.from_user.id, str(articul))
     price, sale_price = _prices_from_card(card)
+    discount = f" (−{round((1 - sale_price / price) * 100)}%)" if price and sale_price < price else ""
     await message.answer(
         "✅ Товар добавлен в отслеживание:\n"
         f"<b>{_html.escape(str(card.get('name')), quote=False)}</b>\n"
         f"Артикул: <code>{articul}</code>\n"
-        f"Цена: <s>{price} ₽</s> <b>{sale_price} ₽</b>\n"
-        f"Остаток: {card.get('qty', 0)} шт."
+        f"Цена: <s>{price} ₽</s> <b>{sale_price} ₽</b>{discount}\n"
+        f"Остаток: {card.get('qty', 0)} шт.\n"
+        f"<a href=\"https://www.wildberries.ru/catalog/{articul}/detail.aspx\">Открыть на WB</a>"
     )
 
 
@@ -121,7 +123,8 @@ async def cmd_list(message: Message) -> None:
         await message.answer("У вас пока нет отслеживаемых товаров. /track АРТИКУЛ")
         return
     lines = [
-        f"• <code>{i['articul']}</code> — {_html.escape(i['title'][:40], quote=False)}: "
+        f"• <a href=\"https://www.wildberries.ru/catalog/{i['articul']}/detail.aspx\">"
+        f"{_html.escape(i['title'][:40], quote=False)}</a> (<code>{i['articul']}</code>): "
         f"<b>{i['sale_price']} ₽</b>, остаток {i['qty']} шт."
         for i in items
     ]
